@@ -21,6 +21,8 @@ export interface ModelSpec {
 export interface Channel {
   id: string;
   name?: string;
+  /** Optional UI grouping label shown in the provider panel. */
+  group?: string;
   baseUrl: string;
   api: 'openai-responses' | 'openai-completions';
   apiKey: string;
@@ -35,6 +37,7 @@ export interface Channel {
 export interface ProviderRow {
   id: string;
   name: string;
+  group?: string;
   endpoint?: string;
   transportApi?: Channel['api'];
   managed: boolean;

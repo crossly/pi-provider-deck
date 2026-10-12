@@ -1,6 +1,6 @@
 {
   "name": "pi-provider-deck",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "type": "module",
   "description": "Interactive multi-provider model management, discovery and F5 refresh for pi",
   "license": "MIT",

@@ -20,15 +20,12 @@ import type {
 	RefreshSummary,
 } from "./contracts.ts";
 
-const ALL_PROVIDER_ID = "\u0000all-providers";
 const DEFAULT_TERMINAL_ROWS = 24;
 const MAX_MESSAGE_WIDTH = 180;
 
 type Pane = "providers" | "models";
 
-type ProviderItem =
- 	| { all: true; id: typeof ALL_PROVIDER_ID }
-	| { all: false; id: string; row: ProviderRow };
+type ProviderItem = { id: string; row: ProviderRow };
 
 interface ModelEntry {
 	key: string;
@@ -132,28 +129,26 @@ class ModelHubComponent implements Component, Focusable {
             this.finish(undefined);
             return;
         }
-        if (matchesKey(data, "f2")) {
+        // Single-letter action keys (case-sensitive) — no pi app/TUI binding uses these.
+        const letter = this.singleLetter(data);
+        if (letter === "a") {
             this.finish({ action: "add" });
             return;
         }
-        if (matchesKey(data, "f3")) {
+        if (letter === "e") {
             this.editHighlightedProvider();
             return;
         }
-        if (matchesKey(data, "f4") || matchesKey(data, "delete")) {
+        if (letter === "d" || letter === "x") {
             this.removeHighlightedProvider();
             return;
         }
-        if (matchesKey(data, "shift+f5") || matchesKey(data, "ctrl+r")) {
-            void this.refreshAll();
-            return;
-        }
-        if (matchesKey(data, "f5")) {
+        if (letter === "r") {
             void this.refreshHighlighted();
             return;
         }
-        if (matchesKey(data, "f6")) {
-            void this.refreshSelected();
+        if (letter === "R") {
+            void this.refreshAll();
             return;
         }
         if (this.isTabKey(data)) {
@@ -174,10 +169,10 @@ class ModelHubComponent implements Component, Focusable {
  		const innerWidth = Math.max(1, renderWidth - 2);
 		const helpLines = this.renderHelpLines(innerWidth);
 		const terminalRows = this.getTerminalRows();
- 		const bodyBudget = Math.max(1, terminalRows - helpLines.length - 6);
-		const allSelected = this.isAllSelected();
+ 		const bodyBudget = Math.max(1, terminalRows - helpLines.length - 3);
+		const markedCount = this.selectedProviderIds.size;
 		const busy = this.rows.filter((row) => row.status === "refreshing");
-		const title = this.renderTitle(busy.length, allSelected);
+		const title = this.renderTitle(busy.length, markedCount);
 
 		const lines: string[] = [];
 		lines.push(this.borderLine(`╭${"─".repeat(Math.max(0, innerWidth))}╮`));
@@ -235,19 +230,15 @@ class ModelHubComponent implements Component, Focusable {
 		await this.refresh(ids, "All configured providers");
  	}
  
- 	private async refreshHighlighted(): Promise<void> {
- 		const item = this.providerItems()[this.providerCursor];
- 		if (!item) return;
- 		if (item.all) {
- 			await this.refreshAll();
- 			return;
- 		}
- 		if (!item.row.dynamic) {
- 			this.setOperationMessage(`${this.displayName(item.row.name)} is static; cached models remain available.`);
- 			return;
- 		}
+	private async refreshHighlighted(): Promise<void> {
+		const item = this.providerItems()[this.providerCursor];
+		if (!item) return;
+		if (!item.row.dynamic) {
+			this.setOperationMessage(`${this.displayName(item.row.name)} is static; cached models remain available.`);
+			return;
+		}
 		await this.refresh([item.row.id], this.displayName(item.row.name));
- 	}
+	}
  
  	private async refreshSelected(): Promise<void> {
  		const ids = [...this.selectedProviderIds].filter((id) => this.rows.some((row) => row.id === id && row.dynamic));
@@ -316,7 +307,7 @@ class ModelHubComponent implements Component, Focusable {
  		else if (matchesKey(data, "home")) this.moveProviderTo(0);
  		else if (matchesKey(data, "end")) this.moveProviderTo(this.providerItems().length - 1);
  		else if (matchesKey(data, "space")) this.toggleProviderSelection();
- 		else if (matchesKey(data, "right") || this.isConfirm(data)) {
+ 		else if (this.isConfirm(data)) {
  			this.pane = "models";
  			this.tui.requestRender();
  		}
@@ -349,11 +340,7 @@ class ModelHubComponent implements Component, Focusable {
     private editHighlightedProvider(): void {
         const row = this.highlightedProvider();
         if (!row) {
-            this.setOperationMessage(
-                this.isAllSelected()
-                    ? "The All providers entry is a group; select a provider to edit."
-                    : "No provider selected. Press F2 to add one.",
-            );
+            this.setOperationMessage("No provider selected. Press a to add one.");
             return;
         }
         if (!row.managed) {
@@ -370,11 +357,7 @@ class ModelHubComponent implements Component, Focusable {
     private removeHighlightedProvider(): void {
         const row = this.highlightedProvider();
         if (!row) {
-            this.setOperationMessage(
-                this.isAllSelected()
-                    ? "All providers cannot be removed; select a provider first."
-                    : "No provider selected. Press F2 to add one.",
-            );
+            this.setOperationMessage("No provider selected. Press a to add one.");
             return;
         }
         this.finish({ action: "remove", providerId: row.id });
@@ -396,21 +379,13 @@ class ModelHubComponent implements Component, Focusable {
  	private toggleProviderSelection(): void {
  		const item = this.providerItems()[this.providerCursor];
  		if (!item) return;
- 		if (item.all) {
-			const dynamicIds = this.rows.filter((row) => row.dynamic && row.configured).map((row) => row.id);
- 			const everySelected = dynamicIds.length > 0 && dynamicIds.every((id) => this.selectedProviderIds.has(id));
- 			if (everySelected) {
- 				for (const id of dynamicIds) this.selectedProviderIds.delete(id);
- 			} else {
- 				for (const id of dynamicIds) this.selectedProviderIds.add(id);
- 			}
- 		} else if (this.selectedProviderIds.has(item.id)) {
- 			this.selectedProviderIds.delete(item.id);
- 		} else {
- 			this.selectedProviderIds.add(item.id);
- 		}
- 		this.tui.requestRender();
- 	}
+		if (this.selectedProviderIds.has(item.id)) {
+			this.selectedProviderIds.delete(item.id);
+		} else {
+			this.selectedProviderIds.add(item.id);
+		}
+		this.tui.requestRender();
+	}
 
  	private moveProvider(delta: number): void {
  		this.moveProviderTo(this.providerCursor + delta);
@@ -463,8 +438,7 @@ class ModelHubComponent implements Component, Focusable {
 
     private applyRows(nextRows: ProviderRow[], initial = false): void {
         const currentItem = this.providerItems()[this.providerCursor];
-        const currentWasAll = currentItem?.all === true;
-        const currentProviderId = currentItem && !currentItem.all ? currentItem.id : undefined;
+        const currentProviderId = currentItem?.id;
         const currentModelKey = this.selectedModelKey;
         this.rows = nextRows.slice();
         for (const id of [...this.selectedProviderIds]) {
@@ -472,13 +446,12 @@ class ModelHubComponent implements Component, Focusable {
         }
 
         const items = this.providerItems();
-        const firstProvider = items.findIndex((item) => !item.all);
         let nextProvider = currentProviderId ? items.findIndex((item) => item.id === currentProviderId) : -1;
         if (initial) {
-            const requested = this.initialProvider ? items.findIndex((item) => !item.all && item.id === this.initialProvider) : -1;
-            nextProvider = requested >= 0 ? requested : firstProvider;
+            const requested = this.initialProvider ? items.findIndex((item) => item.id === this.initialProvider) : -1;
+            nextProvider = requested >= 0 ? requested : (items.length > 0 ? 0 : -1);
         } else if (nextProvider < 0) {
-            nextProvider = currentWasAll && items.length > 0 ? 0 : firstProvider;
+            nextProvider = items.length > 0 ? 0 : -1;
         }
         this.providerCursor = items.length === 0 ? 0 : clamp(nextProvider >= 0 ? nextProvider : 0, 0, items.length - 1);
         this.rebuildModels(currentModelKey);
@@ -520,115 +493,94 @@ class ModelHubComponent implements Component, Focusable {
  		this.selectedModelKey = this.filteredModels[this.modelCursor]?.key;
  	}
 
- 	private renderProviderPane(width: number, height: number): string[] {
- 		const items = this.providerItems();
- 		const lines: string[] = [];
- 		const title = ` ${this.pane === "providers" ? "▶" : " "} Providers (${this.rows.length})`;
- 		lines.push(this.theme.fg(this.pane === "providers" ? "accent" : "text", title));
- 		const visibleItems = Math.max(0, Math.floor((height - 1) / 2));
- 		const scroll = scrollFor(this.providerCursor, items.length, visibleItems);
- 		for (let offset = 0; offset < visibleItems; offset++) {
- 			const index = scroll + offset;
- 			const item = items[index];
- 			if (!item) {
- 				lines.push("");
- 				lines.push("");
- 				continue;
- 			}
- 			const selected = index === this.providerCursor;
- 			const marked = item.all
-				? this.rows.some((row) => row.dynamic && row.configured) && this.rows.filter((row) => row.dynamic && row.configured).every((row) => this.selectedProviderIds.has(row.id))
- 				: this.selectedProviderIds.has(item.id);
- 			if (item.all) {
- 				const totalModels = this.rows.reduce((sum, row) => sum + row.models.length, 0);
- 				const status = this.aggregateStatus();
- 				lines.push(this.providerLine(`[${marked ? "x" : " "}] All providers`, `${this.rows.length} providers · ${totalModels} models · ${status}`, selected, width));
- 				lines.push(this.providerDetailLine("Refresh every dynamic provider", selected, width));
- 			} else {
- 				const count = item.row.models.length;
- 				const status = this.statusLabel(item.row);
-				lines.push(this.providerLine(`[${marked ? "x" : " "}] ${count} ${status} · ${this.displayName(item.row.name)}`, "", selected, width));
- 				const detail = this.providerDetail(item.row);
- 				lines.push(this.providerDetailLine(detail, selected, width));
- 			}
- 		}
-        if (items.length === 0) lines.push(this.theme.fg("dim", "No providers. F2 Add provider"));
- 		return padLines(lines, height);
- 	}
-
- 	private renderModelPane(width: number, height: number): string[] {
- 		const lines: string[] = [];
- 		const title = ` ${this.pane === "models" ? "▶" : " "} Models (${this.filteredModels.length}/${this.modelEntries.length})`;
- 		lines.push(this.theme.fg(this.pane === "models" ? "accent" : "text", title));
- 		this.filterInput.focused = this.focused && this.pane === "models";
- 		const filterWidth = Math.max(1, width - 2);
- 		const filterRendered = this.filterInput.render(filterWidth)[0] ?? "";
- 		lines.push(this.fit(`${this.theme.fg("muted", "Filter ")}${filterRendered}`, width));
-
- 		const visibleItems = Math.max(0, Math.floor((height - 2) / 2));
- 		const scroll = scrollFor(this.modelCursor, this.filteredModels.length, visibleItems);
- 		for (let offset = 0; offset < visibleItems; offset++) {
- 			const index = scroll + offset;
- 			const entry = this.filteredModels[index];
- 			if (!entry) {
- 				lines.push("");
- 				lines.push("");
- 				continue;
- 			}
- 			const selected = index === this.modelCursor;
- 			const name = this.displayName(entry.model.name || entry.model.id);
- 			const id = this.displayName(entry.model.id);
- 			const primary = name === id ? name : `${name} · ${id}`;
-			const details = `${this.displayName(entry.provider.name)} · ${this.displayName(entry.provider.transportApi ?? entry.model.api)} · ${formatContextWindow(entry.model.contextWindow)}`;
- 			lines.push(this.modelLine(primary, selected, width));
- 			lines.push(this.modelDetailLine(details, selected, width));
- 		}
- 		if (this.filteredModels.length === 0) {
- 			lines.push(this.theme.fg("dim", this.filterInput.getValue() ? "No matching models." : "No cached models."));
- 		}
- 		return padLines(lines, height);
- 	}
-
- 	private renderTitle(busyCount: number, allSelected: boolean): string {
- 		const pane = this.pane === "providers" ? "Providers" : "Models";
- 		const selection = this.selectedProviderIds.size > 0 ? ` · ${this.selectedProviderIds.size} selected` : "";
- 		const busy = busyCount > 0 ? ` · Refreshing ${busyCount}` : "";
- 		const operation = this.operationMessage ? ` · ${this.operationMessage}` : "";
- 		return ` ${this.theme.fg("accent", "Model Hub")}  ${this.theme.fg("muted", `${pane}${allSelected ? " · all" : ""}${selection}${busy}`)}${operation}`;
- 	}
-
-    private renderHelpLines(width: number): string[] {
-        const help = [
-            "F2 Add provider · F3 Edit provider · F4/Delete Remove provider",
-            "Tab pane · ↑↓/PgUp/PgDn/Home/End move · type/Backspace filter only · Enter choose · F5 provider/all · Shift+F5/Ctrl+R all · Space mark · F6 marked · Esc/Ctrl+C cancel",
-        ];
-        const lineWidth = Math.max(1, width);
-        return help.flatMap((line) => wrapTextWithAnsi(line, lineWidth));
-    }
-
- 	private providerLine(label: string, status: string, selected: boolean, width: number): string {
- 		const text = `${selected ? "▶" : " "} ${label}  ${status}`;
- 		return this.selectedStyle(text, selected, width);
- 	}
-
- 	private providerDetailLine(text: string, selected: boolean, width: number): string {
- 		const styled = selected ? this.theme.style(`  ${text}`, { fg: "accent", bg: "selectedBg" }) : this.theme.fg("dim", `  ${text}`);
- 		return this.fit(styled, width);
- 	}
-
- 	private modelLine(text: string, selected: boolean, width: number): string {
- 		return this.selectedStyle(`${selected ? "▶" : " "} ${text}`, selected, width);
- 	}
-
- 	private modelDetailLine(text: string, selected: boolean, width: number): string {
- 		const styled = selected ? this.theme.style(`  ${text}`, { fg: "accent", bg: "selectedBg" }) : this.theme.fg("dim", `  ${text}`);
- 		return this.fit(styled, width);
+	private renderProviderPane(width: number, height: number): string[] {
+		const items = this.providerItems();
+		const lines: string[] = [];
+		const title = ` ${this.pane === "providers" ? "▶" : " "} Providers (${items.length})`;
+		lines.push(this.theme.fg(this.pane === "providers" ? "accent" : "text", title));
+		const scroll = scrollFor(this.providerCursor, items.length, Math.max(0, height - 1));
+		let lastGroup: string | undefined = undefined;
+		for (let offset = 0; offset < height - 1; offset++) {
+			const index = scroll + offset;
+			const item = items[index];
+			if (!item) {
+				lines.push("");
+				continue;
+			}
+			// Group header between rows from different groups.
+			const groupName = item.row.group;
+			if (groupName !== lastGroup) {
+				if (offset > 0 || index > 0) lines.push(this.theme.fg("dim", "  ──"));
+				lines.push(this.theme.fg("muted", `  ${groupName || "General"}`));
+				lastGroup = groupName;
+			}
+			const selected = index === this.providerCursor;
+			const marked = this.selectedProviderIds.has(item.row.id);
+			const count = item.row.models.length;
+			const status = this.statusLabel(item.row);
+			const label = `${marked ? "◉" : "○"} ${this.displayName(item.row.name)}  ${count} ${status}`;
+			lines.push(this.providerLine(label, selected, width));
+		}
+		if (items.length === 0) lines.push(this.theme.fg("dim", "  No providers. Press a to add one"));
+		return padLines(lines, height);
 	}
 
- 	private selectedStyle(text: string, selected: boolean, width: number): string {
- 		const styled = selected ? this.theme.style(text, { fg: "accent", bg: "selectedBg", bold: true }) : this.theme.fg("text", text);
- 		return this.fit(styled, width);
- 	}
+	private renderModelPane(width: number, height: number): string[] {
+		const lines: string[] = [];
+		const title = ` ${this.pane === "models" ? "▶" : " "} Models (${this.filteredModels.length}/${this.modelEntries.length})`;
+		lines.push(this.theme.fg(this.pane === "models" ? "accent" : "text", title));
+		this.filterInput.focused = this.focused && this.pane === "models";
+		const filterWidth = Math.max(1, width - 2);
+		const filterRendered = this.filterInput.render(filterWidth)[0] ?? "";
+		lines.push(this.fit(`${this.theme.fg("muted", "Filter ")}${filterRendered}`, width));
+
+		const visibleItems = Math.max(0, height - 2);
+		const scroll = scrollFor(this.modelCursor, this.filteredModels.length, visibleItems);
+		for (let offset = 0; offset < visibleItems; offset++) {
+			const index = scroll + offset;
+			const entry = this.filteredModels[index];
+			if (!entry) {
+				lines.push("");
+				continue;
+			}
+			const selected = index === this.modelCursor;
+			const name = this.displayName(entry.model.name || entry.model.id);
+			const id = this.displayName(entry.model.id);
+			const primary = name === id ? name : `${name} · ${id}`;
+			const context = formatContextWindow(entry.model.contextWindow);
+			lines.push(this.modelLine(`${selected ? "▶" : " "} ${primary}  ${context}`, selected, width));
+		}
+		if (this.filteredModels.length === 0) {
+			lines.push(this.theme.fg("dim", this.filterInput.getValue() ? "  No matching models." : "  No cached models."));
+		}
+		return padLines(lines, height);
+	}
+
+	private renderTitle(busyCount: number, markedCount: number): string {
+		const pane = this.pane === "providers" ? "Providers" : "Models";
+		const marked = markedCount > 0 ? ` · ${markedCount} marked` : "";
+		const busy = busyCount > 0 ? ` · refreshing ${busyCount}` : "";
+		const operation = this.operationMessage ? ` · ${this.operationMessage}` : "";
+		return ` ${this.theme.fg("accent", "Model Hub")}  ${this.theme.fg("muted", `${pane}${marked}${busy}`)}${operation}`;
+	}
+
+    private renderHelpLines(width: number): string[] {
+        const help = "a add · e edit · d/x remove · r refresh · R refresh all · Space mark · Tab pane · Enter choose · Esc cancel";
+        return wrapTextWithAnsi(help, Math.max(1, width));
+    }
+
+	private providerLine(label: string, selected: boolean, width: number): string {
+		return this.selectedStyle(label, selected, width);
+	}
+
+	private modelLine(text: string, selected: boolean, width: number): string {
+		return this.selectedStyle(text, selected, width);
+	}
+
+	private selectedStyle(text: string, selected: boolean, width: number): string {
+		const styled = selected ? this.theme.style(text, { fg: "accent", bg: "selectedBg", bold: true }) : this.theme.fg("text", text);
+		return this.fit(styled, width);
+	}
 
     private providerDetail(row: ProviderRow): string {
         const endpoint = sanitizeEndpoint(row.endpoint);
@@ -640,22 +592,13 @@ class ModelHubComponent implements Component, Focusable {
         return `${source} · ${row.configured ? "Configured; no endpoint reported" : "Not configured"}`;
     }
 
- 	private currentProvider(): ProviderRow | undefined {
- 		const item = this.providerItems()[this.providerCursor];
- 		return item && !item.all ? item.row : undefined;
- 	}
+	private currentProvider(): ProviderRow | undefined {
+		return this.providerItems()[this.providerCursor]?.row;
+	}
 
     private providerItems(): ProviderItem[] {
-        if (this.rows.length === 0) return [];
-        return [
-            { all: true, id: ALL_PROVIDER_ID },
-            ...this.rows.map((row) => ({ all: false as const, id: row.id, row })),
-        ];
+        return this.rows.map((row) => ({ id: row.id, row }));
     }
-
- 	private isAllSelected(): boolean {
- 		return this.providerItems()[this.providerCursor]?.all === true;
- 	}
 
  	private statusLabel(row: ProviderRow): string {
 		if (!row.configured && row.status !== "refreshing") return "no auth";
@@ -664,15 +607,6 @@ class ModelHubComponent implements Component, Focusable {
  		if (row.status === "success") return "ready";
  		if (row.status === "error") return "error";
  		if (row.status === "cancelled") return "cancelled";
- 		return "idle";
- 	}
-
- 	private aggregateStatus(): string {
- 		if (this.rows.some((row) => row.status === "refreshing")) return "refreshing…";
- 		if (this.rows.some((row) => row.status === "error")) return "error";
- 		if (this.rows.some((row) => row.status === "cancelled")) return "cancelled";
- 		if (this.rows.length > 0 && this.rows.every((row) => row.status === "static" || !row.dynamic)) return "static";
- 		if (this.rows.some((row) => row.status === "success")) return "ready";
  		return "idle";
  	}
 
@@ -701,6 +635,14 @@ class ModelHubComponent implements Component, Focusable {
  	private isCancelKey(data: string): boolean {
  		return matchesKey(data, "escape") || matchesKey(data, "ctrl+c") || this.keybindings.matches(data, "tui.select.cancel");
  	}
+
+	/** Recognize one printable ASCII letter as an action key; ignores space/tab/escape. */
+	private singleLetter(data: string): string | undefined {
+		if (data.length !== 1) return undefined;
+		const code = data.charCodeAt(0);
+		if (code < 0x21 || code > 0x7e) return undefined;
+		return data;
+	}
 
  	private isTabKey(data: string): boolean {
  		return matchesKey(data, "tab") || matchesKey(data, "shift+tab") || this.keybindings.matches(data, "tui.input.tab");

@@ -265,6 +265,9 @@ export async function configureChannel(
 	if (nameInput === undefined) return undefined;
 	const displayName = validateDisplayName(nameInput, existing?.name);
 
+	const groupInput = await ctx.ui.input(existing ? "Group (Enter keeps current, empty removes)" : "Group (optional)", existing?.group ?? "e.g. work, personal");
+	if (groupInput === undefined) return undefined;
+	const groupName = validateDisplayName(groupInput, existing?.group);
 	const selectedApi = parseInferenceApi(await ctx.ui.select("Inference API", orderedInferenceApis(existing)));
 	if (!selectedApi) return undefined;
 
@@ -328,8 +331,8 @@ export async function configureChannel(
 		...(authHeader !== undefined ? { authHeader } : {}),
 		discovery: { ...(existing?.discovery ?? {}), type: selectedDiscovery },
 	};
-	if (displayName) channel.name = displayName;
-	else if (!existing?.name) delete channel.name;
+	if (groupName) channel.group = groupName;
+	else if (!existing?.group) delete channel.group;
 
 	try {
 		await service.upsert(channel, ctx);

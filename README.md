@@ -12,53 +12,21 @@ After the package is published to npm:
 pi install npm:pi-provider-deck
 ```
 
-Pin a release:
-
-```sh
-pi install npm:pi-provider-deck@1.0.2
-```
-
-From GitHub after the repository is created:
-
-```sh
-pi install git:github.com/crossly/pi-provider-deck
-```
-
-For a local checkout before publication:
-
-```sh
-npm ci --ignore-scripts
-pi install ./
-```
-
-Run `/reload` in an existing pi session, or start a new session.
-
-### Upgrade, uninstall, and old local installations
-
-```sh
-pi update --extensions
-pi remove npm:pi-provider-deck
-```
-
-A pinned npm version stays pinned; remove it and install the desired version to change that pin.
-
-If upgrading from the development `omp-channels.ts` or `provider-deck.ts` bootstrap in `~/.pi/agent/extensions/`, back up and remove that bootstrap **before** installing this package. Otherwise both copies register the same commands. Removing the extension does not delete provider configuration or credentials.
-
-The registry filename stays **`~/.pi/agent/omp-channels.json`** to preserve existing users' provider data. Renaming the npm package does not migrate, overwrite, or duplicate that registry. No developer-specific path is required by the npm package.
-
 ## Use
 
 Open `/model-hub`, `/channels`, `/models`, or press **Alt+M**.
 
-| Panel key | Action |
+### Panel keys
+
+| Key | Action |
 |---|---|
-| **F2** | Add a provider, including from an empty list |
-| **F3** | Edit a managed provider |
-| **Delete / F4** | Confirm removal/hiding of a provider |
-| **F5** | Force-refresh the highlighted provider; All refreshes configured dynamic providers |
-| **Ctrl+R / Shift+F5** | Refresh all configured dynamic providers |
-| **Space → F6** | Mark providers, then refresh the marked set |
-| **Tab** | Switch provider/model focus |
+| **a** | Add a provider, including from an empty list |
+| **e** | Edit the highlighted managed provider |
+| **d** / **x** | Confirm removal/hiding of the highlighted provider |
+| **r** | Force-refresh the highlighted provider |
+| **R** | Refresh all configured dynamic providers |
+| **Space** | Mark/unmark the highlighted provider |
+| **Tab** | Switch between provider/model panes |
 | Arrows / PageUp / PageDown / Home / End | Navigate |
 | Type / Backspace in the model pane | Filter; Backspace never deletes a provider |
 | **Enter** | Select a model for the current session |
@@ -80,7 +48,22 @@ Command equivalents:
 
 The default list shows managed channels and other authenticated/configured pi providers—not pi's entire unconfigured builtin catalog. A managed channel without credentials stays visible so it can be edited or removed.
 
-### Configuring and removing providers
+Run `/reload` in an existing pi session, or start a new session.
+
+### Upgrade, uninstall, and old local installations
+
+```sh
+pi update --extensions
+pi remove npm:pi-provider-deck
+```
+
+A pinned npm version stays pinned; remove it and install the desired version to change that pin.
+
+If upgrading from the development `omp-channels.ts` or `provider-deck.ts` bootstrap in `~/.pi/agent/extensions/`, back up and remove that bootstrap **before** installing this package. Otherwise both copies register the same commands. Removing the extension does not delete provider configuration or credentials.
+
+The registry filename stays **`~/.pi/agent/omp-channels.json`** to preserve existing users' provider data. Renaming the npm package does not migrate, overwrite, or duplicate that registry. No developer-specific path is required by the npm package.
+
+## Configuring and removing providers
 
 The wizard configures provider ID, URL, display name, inference API, credentials, and discovery protocol. Saving triggers discovery immediately. A failed discovery leaves the saved configuration intact and reports the failure; it never claims successful network discovery when credential resolution fails.
 
@@ -96,6 +79,7 @@ Removing an owned channel deletes its registry entry and unregisters its provide
     {
       "id": "team-gateway",
       "name": "Team gateway",
+      "group": "work",
       "baseUrl": "https://gateway.example/v1",
       "api": "openai-responses",
       "apiKey": "$GATEWAY_API_KEY",
@@ -111,6 +95,10 @@ Removing an owned channel deletes its registry entry and unregisters its provide
   "hiddenProviders": []
 }
 ```
+
+### Provider groups
+
+Set an optional `group` on a channel (or enter one in the add/edit form) to organize the panel into visual sections. Providers without a group appear under "General". Groups are display-only labels; they do not affect discovery, credentials, or refresh behavior.
 
 ### Protocols and metadata
 
@@ -183,6 +171,14 @@ npm publish --access public
 The package name was checked as unoccupied while preparing this release; npm names are not reserved by a local check. Recheck ownership/name availability before publishing. No publish/upload is performed by development checks or CI.
 
 ## Changelog
+
+### 1.0.2 — publication hardening and package rename
+### 1.1.0 — UI redesign and provider groups
+
+- Replaces F-key shortcuts with letter keys: `a` add, `e` edit, `d`/`x` remove, `r` refresh, `R` refresh all, `Space` mark, `Tab` pane, `Enter` choose. Removes redundant F2/F3/F4/F5/F6/Shift+F5/Ctrl+R and right-arrow pane switching.
+- Adds optional provider groups: configure `group` in the add/edit form; the panel organizes providers into visual group sections.
+- Compacts the panel: removes the "All providers" row, shows one line per provider and model, and collapses help to a single line.
+- Keeps editor-level F5 (active provider refresh) unchanged; only the panel shortcuts changed.
 
 ### 1.0.2 — publication hardening and package rename
 

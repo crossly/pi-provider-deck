@@ -217,6 +217,8 @@ function validateChannel(value: unknown, index = 0): Channel {
   const apiKey = source.apiKey;
   const name = assertString(source.name, `channels[${index}].name`, false);
   if (name !== undefined && name.length > MAX_NAME_LENGTH) throw validationError(`channels[${index}].name is too long.`);
+  const group = assertString(source.group, `channels[${index}].group`, false);
+  if (group !== undefined && group.length > MAX_NAME_LENGTH) throw validationError(`channels[${index}].group is too long.`);
   if (source.authHeader !== undefined && typeof source.authHeader !== 'boolean') throw validationError(`channels[${index}].authHeader must be boolean.`);
   if (source.injectV1 !== undefined && typeof source.injectV1 !== 'boolean') throw validationError(`channels[${index}].injectV1 must be boolean.`);
   if (source.envVars !== undefined && (!Array.isArray(source.envVars) || source.envVars.some(item => typeof item !== 'string' || !ENV_NAME.test(item)))) {
@@ -271,6 +273,7 @@ function validateChannel(value: unknown, index = 0): Channel {
     ...(cloneJson(source) as JsonObject),
     id,
     ...(name !== undefined ? { name } : {}),
+    ...(group !== undefined ? { group } : {}),
     baseUrl,
     api: source.api,
     apiKey,
@@ -729,7 +732,7 @@ export class ModelHubService implements HubService {
       rows.push({
         id,
         name: provider?.name ?? channel?.name ?? id,
-        endpoint: safeEndpoint(channel?.baseUrl ?? provider?.baseUrl),
+        ...(channel?.group !== undefined ? { group: channel.group } : {}),
         transportApi: channel?.api,
         managed: Boolean(channel),
         dynamic,
