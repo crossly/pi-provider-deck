@@ -172,7 +172,11 @@ The package name was checked as unoccupied while preparing this release; npm nam
 
 ## Changelog
 
-### 1.0.2 — publication hardening and package rename
+### 1.1.1 — interaction and layout fixes
+
+- Add/edit wizard: pressing Enter on an empty field now reopens the panel silently instead of surfacing validation errors; only real input mistakes are reported.
+- Panel layout: reserves the overlay's terminal margins in the row budget and clamps rendered rows, so the bottom border and help line are no longer cut off on shorter terminals.
+
 ### 1.1.0 — UI redesign and provider groups
 
 - Replaces F-key shortcuts with letter keys: `a` add, `e` edit, `d`/`x` remove, `r` refresh, `R` refresh all, `Space` mark, `Tab` pane, `Enter` choose. Removes redundant F2/F3/F4/F5/F6/Shift+F5/Ctrl+R and right-arrow pane switching.

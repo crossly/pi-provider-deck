@@ -246,7 +246,8 @@ export async function configureChannel(
 	let providerId = requested;
 	if (!providerId) {
 		const entered = await ctx.ui.input("Provider ID", "my-provider");
-		if (entered === undefined) return undefined;
+		// Escape resolves undefined; empty Enter also means "not now" — reopen the panel silently.
+		if (entered === undefined || !entered.trim()) return undefined;
 		providerId = validateProviderId(entered);
 	} else {
 		providerId = validateProviderId(providerId);
@@ -258,8 +259,9 @@ export async function configureChannel(
 	}
 
 	const endpointInput = await ctx.ui.input(existing ? "Endpoint URL (Enter keeps current)" : "Endpoint URL", existing?.baseUrl ?? "https://api.example.com/v1");
+	// Escape or empty submit on the first field exits silently; later fields keep current values.
 	if (endpointInput === undefined) return undefined;
-	const baseUrl = validateEndpoint(endpointInput, existing?.baseUrl);
+	const baseUrl = validateEndpoint(endpointInput.trim() || existing?.baseUrl || "", existing?.baseUrl);
 
 	const nameInput = await ctx.ui.input(existing ? "Display name (Enter keeps current)" : "Display name (optional)", existing?.name ?? "e.g. Team Gateway");
 	if (nameInput === undefined) return undefined;
@@ -293,7 +295,7 @@ export async function configureChannel(
 		sensitiveValues.push(directKey);
 	} else if (credentialChoice === "environment") {
 		const envNameInput = await ctx.ui.input("Environment variable name", inferEnvironmentName(existing));
-		if (envNameInput === undefined) return undefined;
+		if (envNameInput === undefined || !envNameInput.trim()) return undefined;
 		const envName = envNameInput.trim();
 		if (!ENVIRONMENT_NAME.test(envName)) throw new Error("Environment variable name is invalid.");
 		apiKey = `$${envName}`;
@@ -302,7 +304,7 @@ export async function configureChannel(
 		const commandInput = await ctx.ui.input("Command that prints the API key", "e.g. secret-tool lookup service gateway");
 		if (commandInput === undefined) return undefined;
 		const command = commandInput.trim();
-		if (!command || /[\u0000-\u001f\u007f]/.test(command)) throw new Error("A non-empty credential command is required.");
+		if (!command || /[\u0000-\u001f\u007f]/.test(command)) return undefined;
 		apiKey = command.startsWith("!") ? command : `!${command}`;
 		authHeader = true;
 		sensitiveValues.push(command, apiKey);

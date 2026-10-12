@@ -168,8 +168,10 @@ class ModelHubComponent implements Component, Focusable {
  		const renderWidth = Math.max(1, Math.floor(width));
  		const innerWidth = Math.max(1, renderWidth - 2);
 		const helpLines = this.renderHelpLines(innerWidth);
-		const terminalRows = this.getTerminalRows();
- 		const bodyBudget = Math.max(1, terminalRows - helpLines.length - 3);
+		// The overlay reserves `margin: 1` top+bottom outside our component; render
+		// at most that many rows or pi truncates our bottom border and help.
+		const terminalRows = Math.max(6, this.getTerminalRows() - 2);
+ 		const bodyBudget = Math.max(3, terminalRows - helpLines.length - 3);
 		const markedCount = this.selectedProviderIds.size;
 		const busy = this.rows.filter((row) => row.status === "refreshing");
 		const title = this.renderTitle(busy.length, markedCount);
@@ -204,11 +206,12 @@ class ModelHubComponent implements Component, Focusable {
  			}
  		}
  
- 		for (const help of helpLines) {
- 			lines.push(this.outerLine(this.fit(this.theme.fg("dim", help), innerWidth), innerWidth));
- 		}
- 		lines.push(this.borderLine(`╰${"─".repeat(Math.max(0, innerWidth))}╯`));
- 		return lines;
+		for (const help of helpLines) {
+			lines.push(this.outerLine(this.fit(this.theme.fg("dim", help), innerWidth), innerWidth));
+		}
+		lines.push(this.borderLine(`╰${"─".repeat(Math.max(0, innerWidth))}╯`));
+		// Never exceed the terminal budget: pi clamps silently and would cut the bottom.
+		return lines.slice(0, terminalRows);
  	}
 
  	invalidate(): void {
