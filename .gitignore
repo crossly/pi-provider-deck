@@ -1,0 +1,9 @@
+node_modules/
+*.log
+*.tgz
+.env
+.env.*
+!.env.example
+auth.json
+omp-channels.json
+models-store.json

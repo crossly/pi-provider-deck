@@ -1,0 +1,35 @@
+{
+  "name": "pi-provider-deck",
+  "version": "1.0.2",
+  "type": "module",
+  "description": "Interactive multi-provider model management, discovery and F5 refresh for pi",
+  "license": "MIT",
+  "author": "crossly",
+  "repository": { "type": "git", "url": "git+https://github.com/crossly/pi-provider-deck.git" },
+  "homepage": "https://github.com/crossly/pi-provider-deck#readme",
+  "bugs": { "url": "https://github.com/crossly/pi-provider-deck/issues" },
+  "keywords": ["pi-package", "pi", "providers", "models", "model-discovery"],
+  "engines": { "node": ">=22.19.0" },
+  "pi": { "extensions": ["./index.ts"] },
+  "exports": { ".": "./index.ts" },
+  "files": ["index.ts", "contracts.ts", "discovery.ts", "service.ts", "config-store.ts", "registration.ts", "ui.ts", "manage.ts", "terminal.ts", "README.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:install": "node scripts/install-smoke.mjs",
+    "prepublishOnly": "npm run check && npm test && npm run test:install"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.0"
+  }
+}
