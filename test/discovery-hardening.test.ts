@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { buildChannelModel, createChannelProvider, discoverChannelModels, DiscoveryError, resolveChannelCredential, resolveCommandValue } from '../discovery.ts';
 import type { Channel } from '../contracts.ts';
 import { createChannelRegistration } from '../registration.ts';
-import { InMemoryModelsStore } from '@earendil-works/pi-ai';
+import { createModels, InMemoryModelsStore } from '@earendil-works/pi-ai';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
 async function listen(handler: (request: IncomingMessage, response: ServerResponse) => void | Promise<void>) {
@@ -212,9 +212,9 @@ test('cache restoration invalidates changed transport and old sessions dispatch 
   const channelB: Channel = { id: 'switch', baseUrl: `${root}/b/v1`, api: 'openai-completions', apiKey: 'keyNEW' };
   try {
     
-  const runtimeA = await ModelRuntime.create({ modelsStore: store, refreshOnCreate: false, allowModelNetwork: false });
+  const runtimeA = createModels({ modelsStore: store });
   const providerA = createChannelProvider(channelA);
-  runtimeA.registerNativeProvider(providerA);
+  runtimeA.setProvider(providerA);
   const first = await runtimeA.refresh({ providers: ['switch'], allowNetwork: true, force: true });
   assert.equal(first.errors.size, 0);
   const oldModel = runtimeA.getModel('switch', 'cached-model');
@@ -224,13 +224,13 @@ test('cache restoration invalidates changed transport and old sessions dispatch 
   assert.ok(cached);
   assert.ok(!JSON.stringify(cached).includes('keyOLD'));
 
-  const runtimeSame = await ModelRuntime.create({ modelsStore: store, refreshOnCreate: false, allowModelNetwork: false });
-  runtimeSame.registerNativeProvider(createChannelProvider(channelA));
+  const runtimeSame = createModels({ modelsStore: store });
+  runtimeSame.setProvider(createChannelProvider(channelA));
   await runtimeSame.refresh({ providers: ['switch'], allowNetwork: false, force: true });
   assert.ok(runtimeSame.getModel('switch', 'cached-model'));
 
-  const runtimeB = await ModelRuntime.create({ modelsStore: store, refreshOnCreate: false, allowModelNetwork: false });
-  runtimeB.registerNativeProvider(createChannelProvider(channelB));
+  const runtimeB = createModels({ modelsStore: store });
+  runtimeB.setProvider(createChannelProvider(channelB));
   await runtimeB.refresh({ providers: ['switch'], allowNetwork: false, force: true });
   assert.equal(runtimeB.getModel('switch', 'cached-model'), undefined);
   assert.equal(await store.read('switch'), undefined);
