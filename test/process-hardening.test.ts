@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
+import { createServer, createConnection, type Socket } from 'node:net';
 import { resolveCommandValue } from '../discovery.ts';
 
 // This exercises actual OS process-group/tree termination, including its real
 // grace deadline. The child reports readiness over a socket; no guessed sleeps.
-test('aborting a credential command also terminates a descendant ignoring SIGTERM', async () => {
+test('aborting a credential command also terminates a descendant ignoring SIGTERM', { timeout: 30_000 }, async () => {
   const ready = Promise.withResolvers<{ port: number }>();
+  const sockets = new Set<Socket>();
   const control = createServer(socket => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
     let message = '';
     socket.on('data', data => { message += data; });
     socket.on('end', () => ready.resolve(JSON.parse(message)));
@@ -22,12 +25,22 @@ test('aborting a credential command also terminates a descendant ignoring SIGTER
   const operation = resolveCommandValue(command, { signal: abort.signal, timeoutMs: 5000 });
   try {
     const { port } = await Promise.race([ready.promise, operation.then(() => { throw new Error('Credential fixture exited before readiness.'); })]);
+    await new Promise<void>((resolve, reject) => {
+      const socket = createConnection({ port, host: '127.0.0.1', signal: AbortSignal.timeout(2000) });
+      socket.once('connect', () => { socket.destroy(); resolve(); });
+      socket.once('error', reject);
+    });
     abort.abort(new DOMException('Probe cancellation', 'AbortError'));
     await assert.rejects(operation, /cancel|abort/i);
-    await assert.rejects(fetch(`http://127.0.0.1:${port}`));
+    await assert.rejects(new Promise<void>((resolve, reject) => {
+      const socket = createConnection({ port, host: '127.0.0.1', signal: AbortSignal.timeout(2000) });
+      socket.once('connect', () => { socket.destroy(); resolve(); });
+      socket.once('error', reject);
+    }), { code: 'ECONNREFUSED' });
   } finally {
     abort.abort();
     await operation.catch(() => undefined);
+    for (const socket of sockets) socket.destroy();
     await new Promise<void>(resolve => control.close(() => resolve()));
   }
 });

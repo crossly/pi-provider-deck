@@ -159,13 +159,17 @@ async function terminateCommandProcess(child: ChildProcess): Promise<boolean> {
       windowsHide: true,
     });
     killer.once('error', () => { taskkillFailed = true; });
-    const taskkillClosed = await waitForChildClose(killer, COMMAND_TERMINATION_GRACE_MS);
+    // Windows taskkill can take seconds under runner/system load. Do not kill
+    // its target shell before /T has enumerated and terminated descendants.
+    const taskkillClosed = await waitForChildClose(killer, 10_000);
     if (!taskkillClosed || taskkillFailed) {
       try { killer.kill(); } catch { /* already closed */ }
+      try { child.kill(); } catch { /* best-effort fallback after tree failure */ }
+      await waitForChildClose(child, 5_000);
+      return false;
     }
-    try { child.kill(); } catch { /* already closed */ }
-    const childClosed = await waitForChildClose(child, COMMAND_TERMINATION_GRACE_MS);
-    return taskkillClosed && !taskkillFailed && killer.exitCode === 0 && childClosed;
+    const childClosed = await waitForChildClose(child, 5_000);
+    return killer.exitCode === 0 && childClosed;
   }
   try { process.kill(-pid, 'SIGTERM'); } catch { /* group may have exited */ }
   try { child.kill('SIGTERM'); } catch { /* already closed */ }

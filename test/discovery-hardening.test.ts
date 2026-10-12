@@ -99,7 +99,7 @@ test('configured command deadline rejects and cleans up the process tree', async
   const script = JSON.stringify("process.stdout.write('READY'); require('node:net').createServer().listen(0)");
   await assert.rejects(resolveCommandValue(`!${node} -e ${script}`, { timeoutMs: 250 }), error => {
     assert.ok(error instanceof DiscoveryError);
-    assert.equal(error.code, 'timeout');
+    assert.equal(error.code, 'timeout', error.message);
     return true;
   });
 });
