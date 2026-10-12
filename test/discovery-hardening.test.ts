@@ -95,7 +95,7 @@ test('configured command failures do not fall through to environment credentials
 });
 
 test('configured command deadline rejects and cleans up the process tree', async () => {
-  const node = JSON.stringify(process.execPath);
+  const node = process.platform === 'win32' ? `"${process.execPath}"` : JSON.stringify(process.execPath);
   const script = JSON.stringify("process.stdout.write('READY'); require('node:net').createServer().listen(0)");
   await assert.rejects(resolveCommandValue(`!${node} -e ${script}`, { timeoutMs: 250 }), error => {
     assert.ok(error instanceof DiscoveryError);

@@ -190,7 +190,8 @@ export async function resolveCommandValue(
   const timeoutMs = commandTimeout(options.timeoutMs ?? 5_000);
   const windows = process.platform === 'win32';
   const shell = windows ? (process.env.ComSpec ?? process.env.COMSPEC ?? 'cmd.exe') : (process.env.SHELL || '/bin/sh');
-  const shellArgs = windows ? ['/d', '/s', '/c', command] : ['-c', command];
+  // cmd /s strips this outer pair; preserve the user's inner quotes verbatim.
+  const shellArgs = windows ? ['/d', '/s', '/c', `"${command}"`] : ['-c', command];
 
   return await new Promise<string | undefined>((resolve, reject) => {
     let child: ChildProcess;
@@ -200,6 +201,7 @@ export async function resolveCommandValue(
         env: process.env,
         detached: !windows,
         windowsHide: windows,
+        windowsVerbatimArguments: windows,
       });
     } catch (error) {
       reject(new DiscoveryError('Configured command could not be started.', 'command', { cause: error }));

@@ -188,6 +188,7 @@ The package name was checked as unoccupied while preparing this release; npm nam
 
 - Renames the public package to `pi-provider-deck`; preserves existing configuration and command names.
 - Hardens cached transport isolation, redirects, credential-command errors/process cleanup, and terminal-safe output.
+- Preserves inner command quotes verbatim for native Windows `cmd /s /c`, including executable paths containing spaces.
 - Adds transactional cross-process configuration updates and owned-provider lifecycle cleanup.
 - Enforces a shared refresh queue and independent cancellation for coalesced callers.
 - Preserves complete/unknown model and discovery metadata and adds explicit SDK configuration isolation.
