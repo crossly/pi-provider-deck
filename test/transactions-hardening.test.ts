@@ -71,7 +71,7 @@ test('cross-process-style transactions merge latest channels and preserve unknow
   const rootDir = await mkdtemp(join(tmpdir(), 'pi-hub-transactions-'));
   const serviceOneDir = await mkdtemp(join(rootDir, 'one-'));
   const serviceTwoDir = await mkdtemp(join(rootDir, 'two-'));
-  const configPath = join(rootDir, 'omp-channels.json');
+  const configPath = join(rootDir, 'models.json');
   const serverReady = Promise.withResolvers<void>();
   const server = createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -98,22 +98,22 @@ test('cross-process-style transactions merge latest channels and preserve unknow
   const gamma: Channel = { id: 'gamma', baseUrl: `${endpoint}/gamma/v1`, api: 'openai-completions', apiKey: 'gamma-key' };
   const delta: Channel = { id: 'delta', baseUrl: `${endpoint}/delta/v1`, api: 'openai-completions', apiKey: 'delta-key' };
   const epsilon: Channel = { id: 'epsilon', baseUrl: `${endpoint}/epsilon/v1`, api: 'openai-completions', apiKey: 'epsilon-key' };
-  await writeFile(configPath, JSON.stringify({ rootMarker: { owner: 'initial' }, channels: [alpha] }, null, 2), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ rootMarker: { owner: 'initial' }, providers: { [alpha.id]: { ...alpha, piProviderDeck: { managed: true } } } }, null, 2), { mode: 0o600 });
   const first = await startService(configPath, serviceOneDir);
   const second = await startService(configPath, serviceTwoDir);
   try {
     await second.service.upsert(beta, second.ctx);
     await first.service.upsert(gamma, first.ctx);
-    const merged = JSON.parse(await readFile(configPath, 'utf8')) as { rootMarker: { owner: string }; channels: Array<Channel & { futureChannelMetadata?: unknown }> };
+    const merged = JSON.parse(await readFile(configPath, 'utf8')) as { rootMarker: { owner: string }; providers: Record<string, Channel & { futureChannelMetadata?: unknown }> };
     assert.equal(merged.rootMarker.owner, 'initial');
-    assert.deepEqual(merged.channels.map(channel => channel.id).sort(), ['alpha', 'beta', 'gamma']);
-    const mergedAlpha = merged.channels.find(channel => channel.id === 'alpha');
+    assert.deepEqual(Object.keys(merged.providers).sort(), ['alpha', 'beta', 'gamma']);
+    const mergedAlpha = merged.providers.alpha;
     assert.deepEqual(mergedAlpha?.defaults?.futureModelMetadata, { owner: 'external', revision: 7 });
     assert.deepEqual(mergedAlpha?.discovery?.futureDiscoveryMetadata, { source: 'operator' });
 
     await Promise.all([first.service.upsert(delta, first.ctx), second.service.upsert(epsilon, second.ctx)]);
-    const afterConcurrent = JSON.parse(await readFile(configPath, 'utf8')) as { channels: Channel[] };
-    assert.deepEqual(afterConcurrent.channels.map(channel => channel.id).sort(), ['alpha', 'beta', 'delta', 'epsilon', 'gamma']);
+    const afterConcurrent = JSON.parse(await readFile(configPath, 'utf8')) as { providers: Record<string, Channel> };
+    assert.deepEqual(Object.keys(afterConcurrent.providers).sort(), ['alpha', 'beta', 'delta', 'epsilon', 'gamma']);
 
     const staleAlpha = first.service.channels().find(channel => channel.id === 'alpha');
     assert.ok(staleAlpha);
@@ -121,14 +121,14 @@ test('cross-process-style transactions merge latest channels and preserve unknow
     const secondConflict = second.service.upsert({ ...alpha, name: 'second edit' }, second.ctx);
     const conflictResults = await Promise.allSettled([firstConflict, secondConflict]);
     assert.equal(conflictResults.filter(result => result.status === 'rejected').length, 1);
-    const afterConflict = JSON.parse(await readFile(configPath, 'utf8')) as { channels: Array<Channel & { defaults?: Record<string, unknown> }> };
-    const conflictAlpha = afterConflict.channels.find(channel => channel.id === 'alpha');
+    const afterConflict = JSON.parse(await readFile(configPath, 'utf8')) as { providers: Record<string, Channel & { defaults?: Record<string, unknown> }> };
+    const conflictAlpha = afterConflict.providers.alpha;
     assert.ok(conflictAlpha?.name === 'first edit' || conflictAlpha?.name === 'second edit');
     assert.deepEqual(conflictAlpha?.defaults?.futureModelMetadata, { owner: 'external', revision: 7 });
 
     await Promise.all([first.service.sync(first.ctx), second.service.upsert({ id: 'zeta', baseUrl: `${endpoint}/zeta/v1`, api: 'openai-completions', apiKey: 'zeta-key' }, second.ctx)]);
-    const afterSyncRace = JSON.parse(await readFile(configPath, 'utf8')) as { channels: Channel[] };
-    assert.ok(afterSyncRace.channels.some(channel => channel.id === 'zeta'));
+    const afterSyncRace = JSON.parse(await readFile(configPath, 'utf8')) as { providers: Record<string, Channel> };
+    assert.ok('zeta' in afterSyncRace.providers);
   } finally {
     await first.close();
     await second.close();

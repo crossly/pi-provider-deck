@@ -15,7 +15,7 @@ function refreshReport(summary: RefreshSummary) {
 
 /** SDK callers must pass their session's agentDir or an explicit configPath. */
 export function createProviderDeck(options: ProviderDeckOptions = {}): ExtensionFactory {
-  const configPath = options.configPath ?? join(options.agentDir ?? getAgentDir(), 'omp-channels.json');
+  const configPath = options.configPath ?? join(options.agentDir ?? getAgentDir(), 'models.json');
   return function providerDeck(pi: ExtensionAPI) {
   const service = createHubService(pi, configPath);
   let opening = false;
@@ -145,7 +145,7 @@ export function createProviderDeck(options: ProviderDeckOptions = {}): Extension
   });
   pi.on('session_start', async (_event, ctx) => {
     try { await service.sync(ctx); }
-    catch { notify(ctx, 'Model Hub config is invalid; existing providers were kept. Check omp-channels.json.', 'error'); }
+    catch { notify(ctx, 'Model Hub config is invalid; existing providers were kept. Check models.json.', 'error'); }
   });
   pi.on('session_shutdown', () => service.dispose());
 }

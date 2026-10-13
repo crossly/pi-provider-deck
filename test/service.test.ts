@@ -39,12 +39,12 @@ async function fixture() {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const endpoint = `http://127.0.0.1:${address.port}`;
-  const configPath = join(dir, 'omp-channels.json');
+  const configPath = join(dir, 'models.json');
   const channels: Channel[] = ['alpha', 'beta'].map(id => ({
     id, baseUrl: `${endpoint}/${id}/v1`, api: 'openai-completions', apiKey: 'probe-key',
     defaults: { contextWindow: 32768, maxTokens: 4096 },
   }));
-  await writeFile(configPath, JSON.stringify({ channels }), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ providers: Object.fromEntries(channels.map(c => [c.id, { ...c, piProviderDeck: { managed: true } }])) }), { mode: 0o600 });
   const settingsManager = SettingsManager.inMemory({});
   const holder: { service?: HubService; ctx?: ExtensionContext } = {};
   const loader = new DefaultResourceLoader({
@@ -148,7 +148,7 @@ test('config reload adds/removes owned providers and preserves independent regis
     assert.ok(!f.service.channels().some(row => row.id === 'beta'));
     assert.equal(f.runtime.getProvider('beta'), undefined);
     const config = JSON.parse(await readFile(f.configPath, 'utf8'));
-    assert.equal(config.channels.length, 1);
+    assert.equal(Object.keys(config.providers).length, 1);
     await f.service.upsert(f.channels[1], f.ctx);
     await f.service.refresh(f.ctx, ['beta']);
     assert.deepEqual(f.ids('beta'), ['three']);
@@ -207,7 +207,7 @@ test('removing a configured native provider hides it persistently without deleti
     await f.service.sync(f.ctx);
     assert.ok(!f.service.snapshot(f.ctx).some(row => row.id === 'openai'));
     const persisted = JSON.parse(await readFile(f.configPath, 'utf8'));
-    assert.ok(persisted.hiddenProviders.includes('openai'));
+    assert.equal(persisted.providers.openai.piProviderDeck.hidden, true);
     assert.ok(f.runtime.getProvider('openai'));
     assert.equal((await f.runtime.getAuth('openai'))?.auth.apiKey, 'native-probe-key');
   } finally { await f.close(); }
@@ -216,15 +216,15 @@ test('removing a configured native provider hides it persistently without deleti
 test('removed channels do not reappear from models.json static fallback', async () => {
   const f = await fixture();
   try {
-    await writeFile(join(f.configPath, '..', 'models.json'), JSON.stringify({ providers: {
-      beta: { baseUrl: f.channels[1].baseUrl, api: 'openai-completions', apiKey: 'probe-key', models: [{ id: 'static-beta' }] },
-    } }));
+    const existing = JSON.parse(await readFile(f.configPath, 'utf8'));
+    existing.providers.beta = { baseUrl: f.channels[1].baseUrl, api: 'openai-completions', apiKey: 'probe-key', models: [{ id: 'static-beta' }] };
+    await writeFile(f.configPath, JSON.stringify(existing));
     await f.runtime.refresh({ allowNetwork: false });
     await f.service.remove('beta', f.ctx);
     await f.service.sync(f.ctx);
     assert.ok(!f.service.snapshot(f.ctx).some(row => row.id === 'beta'));
     // Deleting a hub entry must not delete independently owned config or credentials.
-    const nativeConfig = JSON.parse(await readFile(join(f.configPath, '..', 'models.json'), 'utf8'));
+    const nativeConfig = JSON.parse(await readFile(f.configPath, 'utf8'));
     assert.equal(nativeConfig.providers.beta.models[0].id, 'static-beta');
     await f.service.upsert(f.channels[1], f.ctx);
     assert.ok(f.service.snapshot(f.ctx).some(row => row.id === 'beta'));

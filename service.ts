@@ -2,10 +2,12 @@ import type { ExtensionAPI, ExtensionContext, ProviderConfig } from '@earendil-w
 import { getBuiltinProviders } from '@earendil-works/pi-ai/providers/all';
 import type { Api, Model, Provider } from '@earendil-works/pi-ai';
 import { resolve, dirname, join } from 'node:path';
+import { rename } from 'node:fs/promises';
 import type { Channel, HubService, ProviderRow, RefreshSummary, ModelSpec } from './contracts.ts';
 import { compareAndRestore, readOptionalText, readOptionalTextSync, withConfigLock, writeAtomic } from './config-store.ts';
 import { createChannelProvider, buildChannelModel, DiscoveryError, type DiscoveryResult } from './discovery.ts';
 import { createChannelRegistration } from './registration.ts';
+import { MANAGED_METADATA_KEY, channelToEntry, entryToChannel, isHiddenEntry, isManagedEntry, managedMetadata, parseModelsJson, removeOrHideEntry, setManagedEntry, type ModelsJsonDocument } from './models-json.ts';
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_ID_LENGTH = 256;
@@ -18,12 +20,9 @@ const REFRESH_DEADLINE_MS = 20_000;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
 
 type JsonObject = Record<string, unknown>;
-type StoredChannel = Channel & JsonObject;
+type StoredChannel = Channel;
 
-interface RawDocument {
-  root: JsonObject;
-  channels: StoredChannel[];
-}
+type RawDocument = ModelsJsonDocument;
 
 interface ProviderReplacement {
   provider?: Provider<Api>;
@@ -288,21 +287,18 @@ function validateChannel(value: unknown, index = 0): Channel {
 }
 
 function parseDocument(value: unknown): RawDocument {
-  assertPlainObject(value, 'top-level configuration');
-  if (!Array.isArray(value.channels)) throw validationError('top-level channels must be an array.');
-  if (value.hiddenProviders !== undefined && (!Array.isArray(value.hiddenProviders) || value.hiddenProviders.some(id => typeof id !== 'string' || !id.trim() || CONTROL_CHARS.test(id)))) {
-    throw validationError('hiddenProviders must be an array of provider IDs.');
+  assertPlainObject(value, 'models.json document');
+  if (value.providers === undefined) return { providers: {} };
+  return parseModelsJson(JSON.stringify(value));
+}
+
+function documentChannels(document: RawDocument): Channel[] {
+  const channels: Channel[] = [];
+  for (const [id, entry] of Object.entries(document.providers)) {
+    const channel = entryToChannel(id, entry);
+    if (channel) channels.push(validateChannel(channel));
   }
-  const channels: StoredChannel[] = [];
-  const seen = new Set<string>();
-  for (let index = 0; index < value.channels.length; index += 1) {
-    const source = value.channels[index];
-    const channel = validateChannel(source, index);
-    if (seen.has(channel.id)) throw validationError(`duplicate channel id "${channel.id}".`);
-    seen.add(channel.id);
-    channels.push(cloneJson(channel) as StoredChannel);
-  }
-  return { root: cloneJson(value), channels };
+  return channels;
 }
 
 function parseText(text: string): RawDocument {
@@ -310,20 +306,62 @@ function parseText(text: string): RawDocument {
   try {
     value = JSON.parse(text) as unknown;
   } catch {
-    throw validationError('JSON is malformed.');
+    throw validationError('models.json is malformed.');
   }
   return parseDocument(value);
 }
 
+/**
+ * One-time migration: convert a legacy omp-channels.json registry into
+ * models.json provider entries, then rename the old file as backup.
+ * Idempotent: skips when the legacy file is absent or already migrated.
+ */
+export async function migrateLegacyChannels(modelsPath: string): Promise<boolean> {
+  const legacyPath = join(dirname(modelsPath), 'omp-channels.json');
+  const legacyText = await readOptionalText(legacyPath);
+  if (legacyText === undefined) return false;
+  const migratedMarker = await readOptionalText(`${legacyPath}.migrated`);
+  if (migratedMarker !== undefined) {
+    await rename(legacyPath, `${legacyPath}.superseded`).catch(() => undefined);
+    return false;
+  }
+  let legacy: { channels?: unknown; hiddenProviders?: unknown };
+  try {
+    legacy = JSON.parse(legacyText) as { channels?: unknown; hiddenProviders?: unknown };
+  } catch {
+    throw new Error(`Legacy omp-channels.json is malformed; move it aside manually to continue: ${legacyPath}`);
+  }
+  if (!Array.isArray(legacy.channels)) throw new Error(`Legacy omp-channels.json has no channels array: ${legacyPath}`);
+  const modelsText = await readOptionalText(modelsPath);
+  const document = parseModelsJson(modelsText);
+  const hidden = new Set(Array.isArray(legacy.hiddenProviders) ? legacy.hiddenProviders.filter((id): id is string => typeof id === 'string') : []);
+  for (const source of legacy.channels) {
+    const channel = validateChannel(source);
+    document.providers[channel.id] = channelToEntry(channel, document.providers[channel.id]);
+    if (hidden.has(channel.id)) {
+      const meta = managedMetadata(document.providers[channel.id]);
+      document.providers[channel.id]![MANAGED_METADATA_KEY] = { ...(meta ?? { managed: true as const }), hidden: true };
+    }
+  }
+  for (const id of hidden) {
+    if (document.providers[id]) continue;
+    document.providers[id] = { [MANAGED_METADATA_KEY]: { managed: false, hidden: true } };
+  }
+  await writeAtomic(modelsPath, documentText(document));
+  await rename(legacyPath, `${legacyPath}.migrated`);
+  return true;
+}
+
+
 async function readDocument(path: string): Promise<RawDocument> {
   const text = await readOptionalText(path);
-  if (text === undefined) return { root: { channels: [] }, channels: [] };
+  if (text === undefined) return { providers: {} };
   return parseText(text);
 }
 
 function readDocumentSync(path: string): RawDocument {
   const text = readOptionalTextSync(path);
-  if (text === undefined) return { root: { channels: [] }, channels: [] };
+  if (text === undefined) return { providers: {} };
   return parseText(text);
 }
 
@@ -338,7 +376,7 @@ function channelFingerprint(channel: Channel): string {
 }
 
 function documentText(document: RawDocument): string {
-  return `${JSON.stringify(document.root, null, 2)}\n`;
+  return `${JSON.stringify(document, null, 2)}\n`;
 }
 
 function mergeJson(base: unknown, update: unknown): unknown {
@@ -416,7 +454,7 @@ export class ModelHubService implements HubService {
     this.configPath = resolve(configPath);
     try {
       this.rawDocument = readDocumentSync(this.configPath);
-      for (const channel of this.rawDocument.channels) {
+      for (const channel of documentChannels(this.rawDocument)) {
         this.channelsById.set(channel.id, channel);
         this.states.set(channel.id, { status: 'idle', models: [], usedFallbackMetadata: false });
         try {
@@ -426,8 +464,8 @@ export class ModelHubService implements HubService {
         }
       }
     } catch (error) {
-      this.rawDocument = { root: { channels: [] }, channels: [] };
-      this.configError = error instanceof Error ? error.message : 'Invalid model hub configuration.';
+      this.rawDocument = { providers: {} };
+      this.configError = error instanceof Error ? error.message : 'Invalid models.json configuration.';
     }
   }
 
@@ -517,15 +555,9 @@ export class ModelHubService implements HubService {
   }
 
   private staticModels(channel: Channel): Model<Api>[] {
-    const text = readOptionalTextSync(join(dirname(this.configPath), 'models.json'));
-    if (!text) return [];
-    let source: unknown;
-    try { source = JSON.parse(text); }
-    catch { throw new Error('Unable to read static model metadata from models.json.'); }
-    if (!source || typeof source !== 'object' || !('providers' in source)) return [];
-    const definition = (source.providers as Record<string, { models?: unknown }> | undefined)?.[channel.id];
-    if (!Array.isArray(definition?.models)) return [];
-    return definition.models.flatMap(row => {
+    const entry = this.rawDocument.providers[channel.id];
+    if (!entry || !Array.isArray(entry.models)) return [];
+    return entry.models.flatMap(row => {
       if (!row || typeof row !== 'object' || typeof row.id !== 'string' || CONTROL_CHARS.test(row.id)) return [];
       const { apiKey: _key, headers: _headers, api: _api, baseUrl: _url, ...metadata } = row;
       const configured: Channel = { ...channel, modelOverrides: { ...channel.modelOverrides, [row.id]: { ...metadata, ...channel.modelOverrides?.[row.id] } } };
@@ -600,13 +632,14 @@ export class ModelHubService implements HubService {
 
   private applyDocument(document: RawDocument, ctx: ExtensionContext): void {
     if (this.disposed) throw new Error('Model hub service is disposed.');
-    const incoming = new Map(document.channels.map(channel => [channel.id, channel]));
+    const managed = documentChannels(document).filter(channel => isManagedEntry(document.providers[channel.id]));
+    const incoming = new Map(managed.map(channel => [channel.id, channel]));
     const nextEntries = new Map(this.entries);
     const nextStates = new Map(this.states);
     const undo: Array<() => void> = [];
     const changedIds = new Set<string>();
     try {
-      for (const channel of document.channels) {
+      for (const channel of managed) {
         const previous = this.entries.get(channel.id);
         const fingerprint = channelFingerprint(channel);
         const current = this.ownedProvider(ctx, channel.id);
@@ -650,7 +683,7 @@ export class ModelHubService implements HubService {
     this.entries.clear();
     for (const [id, entry] of nextEntries) this.entries.set(id, entry);
     this.channelsById.clear();
-    for (const channel of document.channels) this.channelsById.set(channel.id, channel);
+    for (const channel of managed) this.channelsById.set(channel.id, channel);
     this.states.clear();
     for (const [id, state] of nextStates) this.states.set(id, state);
     this.rawDocument = document;
@@ -674,6 +707,7 @@ export class ModelHubService implements HubService {
       if (!this.isLive(generation)) throw new Error('Model hub service is disposed.');
       try {
         await withConfigLock(this.configPath, async () => {
+          await migrateLegacyChannels(this.configPath);
           const document = await readDocument(this.configPath);
           if (!this.isLive(generation)) throw new Error('Model hub service is disposed.');
           this.applyDocument(document, ctx);
@@ -691,7 +725,7 @@ export class ModelHubService implements HubService {
   snapshot(ctx: ExtensionContext): ProviderRow[] {
     this.activeContext = ctx;
     const ids = new Set<string>();
-    const hidden = new Set(Array.isArray(this.rawDocument.root.hiddenProviders) ? this.rawDocument.root.hiddenProviders.filter((id): id is string => typeof id === 'string') : []);
+    const hidden = new Set(Object.entries(this.rawDocument.providers).filter(([, entry]) => isHiddenEntry(entry)).map(([id]) => id));
     for (const id of this.channelsById.keys()) ids.add(id);
     for (const id of this.entries.keys()) ids.add(id);
     try {
@@ -753,7 +787,7 @@ export class ModelHubService implements HubService {
   private async commitConfigMutation(generation: number, ctx: ExtensionContext, mutate: (latest: RawDocument) => RawDocument): Promise<void> {
     const commit = await withConfigLock(this.configPath, async (): Promise<ConfigCommit> => {
       const previousText = await readOptionalText(this.configPath);
-      const latest = previousText === undefined ? { root: { channels: [] }, channels: [] } : parseText(previousText);
+      const latest = previousText === undefined ? ({ providers: {} } as RawDocument) : parseText(previousText);
       if (!this.isLive(generation)) return { previousText, writtenText: previousText ?? '', document: latest, skipped: true };
       const next = mutate(latest);
       const writtenText = documentText(next);
@@ -792,39 +826,32 @@ export class ModelHubService implements HubService {
     this.activeContext = ctx;
     await this.enqueueMutation(async generation => {
       if (!this.isLive(generation)) throw new Error('Model hub service is disposed.');
-      const base = this.rawDocument.channels.find(item => item.id === normalized.id);
+      const base = documentChannels(this.rawDocument).find(item => item.id === normalized.id);
       const expected = base ? channelFingerprint(base) : undefined;
       await this.commitConfigMutation(generation, ctx, latest => {
-        const current = latest.channels.find(item => item.id === normalized.id);
+        const current = documentChannels(latest).find(item => item.id === normalized.id);
         if ((expected !== undefined && (!current || channelFingerprint(current) !== expected)) || (expected === undefined && current)) {
-          throw new Error(`Channel ${normalized.id} changed externally; retry the edit.`);
+          throw new Error(`Provider ${normalized.id} changed externally; retry the edit.`);
         }
-        const stored = mergeJson(current ?? {}, normalized) as StoredChannel;
-        const channels = latest.channels.filter(item => item.id !== normalized.id).map(item => cloneJson(item));
-        channels.push(stored);
-        const hiddenProviders = (Array.isArray(latest.root.hiddenProviders) ? latest.root.hiddenProviders.filter((id): id is string => typeof id === 'string') : []).filter(id => id !== normalized.id);
-        const root = { ...cloneJson(latest.root), channels, hiddenProviders };
-        return { root, channels };
+        const merged: Channel = { ...current, ...normalized } as Channel;
+        return setManagedEntry(latest, merged);
       });
     });
   }
 
   async remove(id: string, ctx: ExtensionContext): Promise<void> {
-    if (!id || id.length > MAX_ID_LENGTH || CONTROL_CHARS.test(id)) throw new Error('Invalid channel id.');
+    if (!id || id.length > MAX_ID_LENGTH || CONTROL_CHARS.test(id)) throw new Error('Invalid provider id.');
     this.activeContext = ctx;
     await this.enqueueMutation(async generation => {
       if (!this.isLive(generation)) throw new Error('Model hub service is disposed.');
-      const base = this.rawDocument.channels.find(item => item.id === id);
+      const base = documentChannels(this.rawDocument).find(item => item.id === id);
       const expected = base ? channelFingerprint(base) : undefined;
       if (!base && !this.snapshot(ctx).some(row => row.id === id)) throw new Error(`No visible provider ${id}.`);
       await this.commitConfigMutation(generation, ctx, latest => {
-        const current = latest.channels.find(item => item.id === id);
-        if (expected !== undefined && current && channelFingerprint(current) !== expected) throw new Error(`Channel ${id} changed externally; retry the edit.`);
-        if (expected === undefined && current) throw new Error(`Channel ${id} changed externally; retry the edit.`);
-        const channels = latest.channels.filter(item => item.id !== id).map(item => cloneJson(item));
-        const hiddenProviders = [...new Set([...(Array.isArray(latest.root.hiddenProviders) ? latest.root.hiddenProviders.filter((value): value is string => typeof value === 'string') : []), id])];
-        const root = { ...cloneJson(latest.root), channels, hiddenProviders };
-        return { root, channels };
+        const current = documentChannels(latest).find(item => item.id === id);
+        if (expected !== undefined && current && channelFingerprint(current) !== expected) throw new Error(`Provider ${id} changed externally; retry the edit.`);
+        if (expected === undefined && current) throw new Error(`Provider ${id} changed externally; retry the edit.`);
+        return removeOrHideEntry(latest, id);
       });
     });
   }

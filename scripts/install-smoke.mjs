@@ -28,7 +28,7 @@ try {
   });
   const pack = JSON.parse(packed.stdout)[0];
   assert.ok(pack.files.some(file => file.path === 'LICENSE'));
-  assert.ok(!pack.files.some(file => /(^|\/)(auth|omp-channels|models-store)\.json$|node_modules\//.test(file.path)));
+  assert.ok(!pack.files.some(file => /(^|\/)(auth|models-store)\.json$|node_modules\//.test(file.path)));
   const tarball = await readFile(join(temporary, pack.filename));
   let origin;
   server = createServer((request, response) => {
@@ -73,10 +73,13 @@ try {
   const modules = await readdir(join(agentDir, 'npm', 'node_modules'));
   assert.ok(modules.includes(manifest.name));
   assert.ok(!modules.includes('@earendil-works'), 'Host packages must not be installed as physical package dependencies.');
-  await writeFile(join(agentDir, 'omp-channels.json'), JSON.stringify({ channels: [{
-    id: 'installation-probe', baseUrl: `${origin}/catalog/v1`, api: 'openai-completions', apiKey: 'installation-probe-key',
-    defaults: { contextWindow: 8192, maxTokens: 1024 },
-  }] }), { mode: 0o600 });
+  await writeFile(join(agentDir, 'models.json'), JSON.stringify({ providers: {
+    'installation-probe': {
+      id: 'installation-probe', baseUrl: `${origin}/catalog/v1`, api: 'openai-completions', apiKey: 'installation-probe-key',
+      defaults: { contextWindow: 8192, maxTokens: 1024 },
+      piProviderDeck: { managed: true },
+    },
+  } }), { mode: 0o600 });
 
   rpc = spawn(process.execPath, [piCli, '--mode', 'rpc', '--no-session'], { cwd: temporary, env, stdio: ['pipe', 'pipe', 'pipe'] });
   rpcClosed = new Promise(resolve => rpc.once('close', resolve));

@@ -71,6 +71,6 @@ export interface HubUIOptions {
 export interface ProviderDeckOptions {
   /** Required by SDK embeddings that use a non-default config directory. */
   agentDir?: string;
-  /** Overrides the registry path; defaults to <agentDir>/omp-channels.json. */
+  /** Overrides the models.json path; defaults to <agentDir>/models.json. */
   configPath?: string;
 }

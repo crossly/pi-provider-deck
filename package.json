@@ -1,18 +1,51 @@
 {
   "name": "pi-provider-deck",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "type": "module",
   "description": "Interactive multi-provider model management, discovery and F5 refresh for pi",
   "license": "MIT",
   "author": "crossly",
-  "repository": { "type": "git", "url": "git+https://github.com/crossly/pi-provider-deck.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crossly/pi-provider-deck.git"
+  },
   "homepage": "https://github.com/crossly/pi-provider-deck#readme",
-  "bugs": { "url": "https://github.com/crossly/pi-provider-deck/issues" },
-  "keywords": ["pi-package", "pi", "providers", "models", "model-discovery"],
-  "engines": { "node": ">=22.19.0" },
-  "pi": { "extensions": ["./index.ts"] },
-  "exports": { ".": "./index.ts" },
-  "files": ["index.ts", "contracts.ts", "discovery.ts", "service.ts", "config-store.ts", "registration.ts", "ui.ts", "manage.ts", "terminal.ts", "README.md", "LICENSE", "NOTICE"],
+  "bugs": {
+    "url": "https://github.com/crossly/pi-provider-deck/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "providers",
+    "models",
+    "model-discovery"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "exports": {
+    ".": "./index.ts"
+  },
+  "files": [
+    "index.ts",
+    "contracts.ts",
+    "discovery.ts",
+    "models-json.ts",
+    "service.ts",
+    "config-store.ts",
+    "registration.ts",
+    "ui.ts",
+    "manage.ts",
+    "terminal.ts",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",

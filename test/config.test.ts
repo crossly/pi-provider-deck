@@ -16,13 +16,13 @@ test('editing a channel preserves configured metadata and atomic config rejects 
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const address=server.address(); assert.ok(address && typeof address !== 'string');
-  const configPath=join(dir,'omp-channels.json');
+  const configPath=join(dir,'models.json');
   const channel: Channel = {
     id:'metadata',baseUrl:`http://127.0.0.1:${address.port}/v1`,api:'openai-completions',apiKey:'not-secret',
     defaults:{contextWindow:16384,maxTokens:2048,reasoning:false,input:['text']},
     modelOverrides:{reasoner:{contextWindow:65536,maxTokens:8192,reasoning:true,input:['text','image'],cost:{input:2,output:4}}},
   };
-  await writeFile(configPath,JSON.stringify({channels:[channel]}));
+  await writeFile(configPath,JSON.stringify({providers:{[channel.id]:{...channel,piProviderDeck:{managed:true}}}}));
   const holder:{service?:HubService;ctx?:ExtensionContext}={};
   const settingsManager=SettingsManager.inMemory({});
   const resourceLoader=new DefaultResourceLoader({cwd:dir,agentDir:dir,settingsManager,noExtensions:true,noSkills:true,noPromptTemplates:true,noThemes:true,noContextFiles:true,

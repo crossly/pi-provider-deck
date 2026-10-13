@@ -59,7 +59,7 @@ async function startFixture(ids: readonly string[]): Promise<Fixture> {
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
   const endpoint = `http://127.0.0.1:${address.port}`;
-  const configPath = join(dir, 'omp-channels.json');
+  const configPath = join(dir, 'models.json');
   const channels: Channel[] = ids.map(id => ({
     id,
     baseUrl: `${endpoint}/${id}/v1`,
@@ -67,7 +67,7 @@ async function startFixture(ids: readonly string[]): Promise<Fixture> {
     apiKey: 'hardening-key',
     defaults: { contextWindow: 32768, maxTokens: 4096 },
   }));
-  await writeFile(configPath, JSON.stringify({ channels }, null, 2), { mode: 0o600 });
+  await writeFile(configPath, JSON.stringify({ providers: Object.fromEntries(channels.map(c => [c.id, { ...c, piProviderDeck: { managed: true } }])) }, null, 2), { mode: 0o600 });
   const holder: { service?: HubService; ctx?: ExtensionContext } = {};
   const settingsManager = SettingsManager.inMemory({});
   const loader = new DefaultResourceLoader({
@@ -205,8 +205,8 @@ test('disposing while a transaction waits for the file lock never registers the 
     await assert.rejects(pending, /disposed/i);
     await lock;
     assert.equal(fixture.runtime.getProvider('pending'), undefined);
-    const stored = JSON.parse(await readFile(fixture.configPath, 'utf8')) as { channels: Channel[] };
-    assert.ok(!stored.channels.some(channel => channel.id === 'pending'));
+    const stored = JSON.parse(await readFile(fixture.configPath, 'utf8')) as { providers: Record<string, unknown> };
+    assert.ok(!('pending' in stored.providers));
   } finally {
     await fixture.close();
   }

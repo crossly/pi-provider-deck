@@ -61,7 +61,7 @@ A pinned npm version stays pinned; remove it and install the desired version to 
 
 If upgrading from the development `omp-channels.ts` or `provider-deck.ts` bootstrap in `~/.pi/agent/extensions/`, back up and remove that bootstrap **before** installing this package. Otherwise both copies register the same commands. Removing the extension does not delete provider configuration or credentials.
 
-The registry filename stays **`~/.pi/agent/omp-channels.json`** to preserve existing users' provider data. Renaming the npm package does not migrate, overwrite, or duplicate that registry. No developer-specific path is required by the npm package.
+Provider configuration lives directly in pi's native **`~/.pi/agent/models.json`** — the single source of truth. Extension-owned providers carry a `piProviderDeck` metadata block; native and other-extension entries are never modified. A legacy `~/.pi/agent/omp-channels.json` registry is migrated automatically on first start and renamed to `omp-channels.json.migrated` as a backup.
 
 ## Configuring and removing providers
 
@@ -69,30 +69,31 @@ The wizard configures provider ID, URL, display name, inference API, credentials
 
 Credentials support masked direct API keys, environment variables, `!command`, and keyless local endpoints. During editing, **Keep existing** does not show the old key. Enter retains the current endpoint/name. Model defaults/overrides and unknown configuration fields are retained.
 
-Removing an owned channel deletes its registry entry and unregisters its provider. Removing a native/other-extension provider persistently hides it from this panel. Neither operation deletes pi `auth.json` or `models.json`; an active model is not silently switched. Hidden IDs live in `hiddenProviders` in the registry so static model declarations cannot make them reappear here. Remove an ID from that array to restore a hidden native provider, or re-add a channel with that ID.
+Removing an owned provider deletes its models.json entry and unregisters it. Removing a native/other-extension provider persistently hides it from this panel via `piProviderDeck.hidden: true` in its models.json entry; its credentials and model declarations are never touched. Set `hidden: false` (or delete the marker) to restore a hidden native provider.
 
 ## Configuration
 
 ```json
 {
-  "channels": [
-    {
-      "id": "team-gateway",
+  "providers": {
+    "team-gateway": {
       "name": "Team gateway",
-      "group": "work",
       "baseUrl": "https://gateway.example/v1",
       "api": "openai-responses",
       "apiKey": "$GATEWAY_API_KEY",
-      "defaults": {
-        "contextWindow": 131072,
-        "maxTokens": 16384,
-        "reasoning": false,
-        "input": ["text"]
-      },
-      "discovery": { "type": "openai", "timeoutMs": 10000 }
+      "piProviderDeck": {
+        "managed": true,
+        "group": "work",
+        "defaults": {
+          "contextWindow": 131072,
+          "maxTokens": 16384,
+          "reasoning": false,
+          "input": ["text"]
+        },
+        "discovery": { "type": "openai", "timeoutMs": 10000 }
+      }
     }
-  ],
-  "hiddenProviders": []
+  }
 }
 ```
 
@@ -112,7 +113,7 @@ For native Google/Anthropic/etc. inference, configure pi's built-in provider; th
 
 A bare model ID does not establish context size, output limits, image/reasoning support, or price. Configure accurate defaults and per-model overrides; metadata is not guessed from model names. Missing limits use the prior extension's **unverified 128K/16K fallback**, explicitly flagged in the panel. Zero price means unknown, not a guarantee of free usage. Pi's pricing tiers, image/input limits, thinking-specific sampling, and explicit model metadata are supported.
 
-Explicit static entries in the registry directory's `models.json` remain available even when omitted by remote discovery. They supply metadata, not authority to override a managed channel's URL/API/key. Managed channels use a stable `pi-provider-deck:<provider>` dispatch identity internally; the panel displays the actual configured OpenAI transport. F5 does not rewrite `models.json`; remove obsolete static entries yourself if you want only remotely listed models.
+Explicit static `models` entries in a provider's models.json entry remain available even when omitted by remote discovery. They supply metadata, not authority to override a managed provider's URL/API/key. Managed providers use a stable `pi-provider-deck:<provider>` dispatch identity internally; the panel displays the actual configured OpenAI transport. Refresh does not rewrite `models.json`; remove obsolete static entries yourself if you want only remotely listed models.
 
 ### Credential security
 
@@ -171,6 +172,13 @@ npm publish --access public
 The package name was checked as unoccupied while preparing this release; npm names are not reserved by a local check. Recheck ownership/name availability before publishing. No publish/upload is performed by development checks or CI.
 
 ## Changelog
+
+### 1.2.0 — models.json as the single source of truth
+
+- Provider configuration now lives directly in pi's native `~/.pi/agent/models.json`; the private `omp-channels.json` registry is gone. Extension-owned providers carry a `piProviderDeck` metadata block (`managed`, `group`, `defaults`, `modelOverrides`, `discovery`, `hidden`); native and other-extension entries are never modified.
+- First start migrates a legacy `omp-channels.json` automatically and renames it `omp-channels.json.migrated` as a backup. Hidden legacy provider IDs become hidden-marker entries in models.json.
+- Removing a managed provider deletes its models.json entry; removing a native provider writes `piProviderDeck.hidden: true` into its entry so static model declarations cannot make it reappear.
+- Static `models` arrays in a provider entry are honored natively (no separate static-metadata pass).
 
 ### 1.1.1 — interaction and layout fixes
 

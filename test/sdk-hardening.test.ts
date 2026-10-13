@@ -13,8 +13,8 @@ test('SDK factory uses explicitly supplied agentDir without changing the process
   const server = createServer((_request, response) => response.writeHead(200, { 'Content-Type': 'application/json' }).end('{"data":[{"id":"sdk-model"}]}'));
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  const configPath = join(dir, 'omp-channels.json');
-  await writeFile(configPath, JSON.stringify({ channels: [{ id: 'sdk-private', baseUrl: `http://127.0.0.1:${address.port}/v1`, api: 'openai-completions', apiKey: 'sdk-fixture-key' }] }));
+  const configPath = join(dir, 'models.json');
+  await writeFile(configPath, JSON.stringify({ providers: { 'sdk-private': { id: 'sdk-private', baseUrl: `http://127.0.0.1:${address.port}/v1`, api: 'openai-completions', apiKey: 'sdk-fixture-key', piProviderDeck: { managed: true } } } }));
   let session: AgentSession | undefined;
   let context: ExtensionContext | undefined;
   try {
@@ -29,16 +29,18 @@ test('SDK factory uses explicitly supplied agentDir without changing the process
     await session.prompt('/models-refresh sdk-private');
     assert.equal(modelRuntime.getModel('sdk-private', 'sdk-model')?.id, 'sdk-model');
     assert.deepEqual(modelRuntime.getRegisteredProviderIds(), ['sdk-private']);
-    assert.equal(JSON.parse(await readFile(configPath, 'utf8')).channels[0].id, 'sdk-private');
+    assert.equal(Object.keys(JSON.parse(await readFile(configPath, 'utf8')).providers)[0], 'sdk-private');
     assert.ok(context);
     const messages: string[] = [];
-    context.ui.notify = message => messages.push(message);
+    const dbgErrors: string[] = [];
+    context.ui.notify = message => { messages.push(message); dbgErrors.push(String(message)); };
     notify(context, 'model-\u001b]52;c;cHJvYmU=\u0007\u009b31m\nsecond line');
     assert.equal(messages.length, 1);
     assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(messages[0]));
     assert.ok(messages[0].includes('\nsecond line'));
-    await writeFile(configPath, '{"channels":[]}');
+    await writeFile(configPath, '{"providers":{}}');
     await session.reload();
+    await modelRuntime.refresh({ allowNetwork: false });
     assert.equal(modelRuntime.getProvider('sdk-private'), undefined);
     assert.deepEqual(modelRuntime.getRegisteredProviderIds(), []);
   } finally {

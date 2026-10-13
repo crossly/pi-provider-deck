@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 test('independent pi processes commit disjoint provider edits without losing either update', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'pi-deck-processes-'));
-  const configPath = join(dir, 'omp-channels.json');
-  await writeFile(configPath, JSON.stringify({ channels: [{ id: 'alpha', baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'fixture-only' }], retained: { marker: 'preserve' } }));
+  const configPath = join(dir, 'models.json');
+  await writeFile(configPath, JSON.stringify({ providers: { alpha: { id: 'alpha', baseUrl: 'http://127.0.0.1:1/v1', api: 'openai-completions', apiKey: 'fixture-only', piProviderDeck: { managed: true } } }, retained: { marker: 'preserve' } }));
   const workers = [];
   try {
     for (const id of ['beta', 'gamma']) {
@@ -40,7 +40,7 @@ test('independent pi processes commit disjoint provider edits without losing eit
     await Promise.all(workers.map(worker => worker.done));
     await Promise.all(workers.map(worker => worker.exited));
     const document = JSON.parse(await readFile(configPath, 'utf8'));
-    assert.deepEqual(document.channels.map((channel: { id: string }) => channel.id).sort(), ['alpha', 'beta', 'gamma']);
+    assert.deepEqual(Object.keys(document.providers).sort(), ['alpha', 'beta', 'gamma']);
     assert.deepEqual(document.retained, { marker: 'preserve' });
   } finally {
     for (const worker of workers) if (worker.child.exitCode === null) worker.child.kill();
