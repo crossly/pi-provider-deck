@@ -230,3 +230,16 @@ test('removed channels do not reappear from models.json static fallback', async 
     assert.ok(f.service.snapshot(f.ctx).some(row => row.id === 'beta'));
   } finally { await f.close(); }
 });
+
+test('a successful refresh persists discovered models into models.json', async () => {
+  const f = await fixture();
+  try {
+    const summary = await f.service.refresh(f.ctx, ['alpha']);
+    assert.equal(summary.results[0]?.status, 'success');
+    const persisted = JSON.parse(await readFile(f.configPath, 'utf8'));
+    const discovered = persisted.providers.alpha.models.map((model: { id: string }) => model.id).sort();
+    assert.deepEqual(discovered, ['one', 'two']);
+    assert.equal(persisted.providers.alpha.models[0].provider, undefined, 'transport fields must not be persisted');
+    assert.equal(persisted.providers.alpha.piProviderDeck.managed, true);
+  } finally { await f.close(); }
+});

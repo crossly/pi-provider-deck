@@ -927,6 +927,41 @@ export class ModelHubService implements HubService {
     }
   }
 
+  /**
+   * Write discovered models back to models.json so external consumers (e.g.
+   * Paseo) see the runtime catalog. Serializes each model's metadata minus
+   * transport fields; per-model user overrides in piProviderDeck stay intact.
+   */
+  private async persistDiscoveredModels(id: string, models: readonly Model<Api>[]): Promise<void> {
+    try {
+      await withConfigLock(this.configPath, async () => {
+        const text = await readOptionalText(this.configPath);
+        if (text === undefined) return;
+        const document = parseText(text);
+        const entry = document.providers[id];
+        if (!entry || !isManagedEntry(entry)) return;
+        entry.models = models.map(model => this.modelToStaticEntry(model));
+        await writeAtomic(this.configPath, documentText(document));
+      }, { signal: this.sessionController.signal });
+    } catch {
+      // Writeback is best-effort; a failed persistence must not fail the refresh.
+    }
+  }
+
+  private modelToStaticEntry(model: Model<Api>): Record<string, unknown> {
+    const { provider: _p, api: _a, baseUrl: _b, headers: _h, ...metadata } = model as unknown as Record<string, unknown>;
+    const entry: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value === undefined) continue;
+      if (key === 'cost' && typeof value === 'object' && value !== null) {
+        const cost = value as Record<string, unknown>;
+        if (cost.input === 0 && cost.output === 0 && cost.cacheRead === 0 && cost.cacheWrite === 0 && !cost.tiers) continue;
+      }
+      entry[key] = cloneJson(value);
+    }
+    return entry;
+  }
+
   private async runRefreshJob(job: RefreshJob): Promise<RefreshOutcome> {
     const entry = this.entries.get(job.id);
     const channel = entry?.channel ?? this.channelsById.get(job.id);
@@ -968,6 +1003,7 @@ export class ModelHubService implements HubService {
         return { id: job.id, status: 'error', count: models.length, message };
       }
       const refreshedAt = Date.now();
+      await this.persistDiscoveredModels(job.id, models);
       this.setState(job.id, { status: 'success', models, refreshedAt, message: this.states.get(job.id)?.message });
       return { id: job.id, status: 'success', count: models.length, ...(this.states.get(job.id)?.message ? { message: this.states.get(job.id)?.message } : {}) };
     } catch (error) {

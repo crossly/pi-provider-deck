@@ -173,6 +173,10 @@ The package name was checked as unoccupied while preparing this release; npm nam
 
 ## Changelog
 
+### 1.2.1 — discovery writeback
+
+- A successful provider refresh now persists the discovered catalog into that provider's `models` array in `models.json`, so external consumers (e.g. Paseo) see the full runtime catalog without an RPC query. Per-model user overrides and the `piProviderDeck` metadata block are preserved; transport fields (`provider`, `api`, `baseUrl`, `headers`) are excluded.
+
 ### 1.2.0 — models.json as the single source of truth
 
 - Provider configuration now lives directly in pi's native `~/.pi/agent/models.json`; the private `omp-channels.json` registry is gone. Extension-owned providers carry a `piProviderDeck` metadata block (`managed`, `group`, `defaults`, `modelOverrides`, `discovery`, `hidden`); native and other-extension entries are never modified.
